@@ -4,7 +4,7 @@ mac2userterminalcommand
 mac3userterminalcommand
 
 # Instruction/reference docs — not part of the repo
-requried/
+required/
 
 # macOS
 .DS_Store
@@ -14,6 +14,13 @@ requried/
 # Python
 __pycache__/
 *.pyc
+
+# TLS private keys and generated certificates — NEVER commit these
+tls/*.key
+tls/*.crt
+
+# nginx backup configs (local only)
+nginx/*.backup
 
 # Wireshark captures (large binary files — share manually)
 *.pcapng
