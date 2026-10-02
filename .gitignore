@@ -4,7 +4,7 @@ mac2userterminalcommand
 mac3userterminalcommand
 
 # Instruction/reference docs — not part of the repo
-required/
+requried/
 
 # macOS
 .DS_Store
@@ -27,3 +27,8 @@ nginx/*.backup
 
 # Evidence screenshots (share manually if needed)
 evidence/*.png
+
+# Final Submission Artifacts (Local only, not pushed)
+Testing_Instructions.md
+Video_Script.md
+Google_Form_Submission_Details.md
