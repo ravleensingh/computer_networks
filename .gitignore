@@ -1,0 +1,22 @@
+# Terminal command logs — local collaboration files only, never pushed
+mac1userterminalcommand
+mac2userterminalcommand
+mac3userterminalcommand
+
+# Instruction/reference docs — not part of the repo
+requried/
+
+# macOS
+.DS_Store
+*.swp
+*~
+
+# Python
+__pycache__/
+*.pyc
+
+# Wireshark captures (large binary files — share manually)
+*.pcapng
+
+# Evidence screenshots (share manually if needed)
+evidence/*.png
