@@ -2,13 +2,13 @@
 
 ## 1. Network Topology
 The team consists of 3 MacOS machines operating on a shared private LAN.
-- **Mac 1 (192.168.1.10)**: DNS Server (dnsmasq) + Backend Server B (Port 3002) + Test Client
-- **Mac 2 (192.168.1.11)**: Edge / Reverse Proxy + Load Balancer (nginx) + TLS Termination
-- **Mac 3 (192.168.1.9)**: Backend Server A (Port 3001)
+- **Mac 1 (10.7.20.106)**: DNS Server (dnsmasq) + Backend Server B (Port 3002) + Test Client
+- **Mac 2 (10.7.19.222)**: Edge / Reverse Proxy + Load Balancer (nginx) + TLS Termination
+- **Mac 3 (10.7.7.23)**: Backend Server A (Port 3001)
 
 ```mermaid
 graph LR
-    Client[Mac1 Test Client] -->|DNS Query| DNS[Mac1: dnsmasq:53]
+    Client[Mac3 Test Client] -->|DNS Query| DNS[Mac1: dnsmasq:53]
     Client -->|HTTPS Request| Edge[Mac2: nginx:8443]
     Edge -->|HTTP Proxy| BackendA[Mac3: Backend A:3001]
     Edge -->|HTTP Proxy| BackendB[Mac1: Backend B:3002]
@@ -17,9 +17,9 @@ graph LR
 ## 2. Machine Roles and IP/Service Table
 | Machine | Assigned LAN IP | Role | Services & Ports |
 |---|---|---|---|
-| Mac 1 | 192.168.1.10 | DNS + Backend B + Client | dnsmasq (53), Backend B (3002) |
-| Mac 2 | 192.168.1.11 | Edge Load Balancer | nginx (8443, TLS) |
-| Mac 3 | 192.168.1.9 | Backend A | Backend A (3001) |
+| Mac 1 (Ravleen) | 10.7.20.106 | DNS + Backend B + Client | dnsmasq (53), Backend B (3002) |
+| Mac 2 (Lakshay) | 10.7.19.222 | Edge Load Balancer | nginx (8443, TLS) |
+| Mac 3 (Shitanshu) | 10.7.7.23 | Backend A | Backend A (3001) |
 
 ## 3. Request-Flow Diagram showing each protocol layer
 1. **DNS Resolution**: Client (Mac1) queries DNS (`app.teamX.test`) -> Mac1 dnsmasq:53 -> responds with Mac2's IP.
