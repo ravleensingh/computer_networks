@@ -1,139 +1,524 @@
-# Computer Networks Project
+<div align="center">
 
-## Team Setup (Type 2 — 3 Macs with combined roles)
+<img src="https://capsule-render.vercel.app/api?type=waving&color=gradient&customColorList=12,20,24&height=200&section=header&text=Private%20Network%20Service%20Platform&fontSize=38&fontColor=ffffff&animation=fadeIn&fontAlignY=38&desc=Computer%20Networks%20Course%20Project&descAlignY=58&descSize=18" alt="Private Network Service Platform" width="100%"/>
 
-| Our Mac | Instructor Role(s)         | Services                                                        |
-|---------|----------------------------|-----------------------------------------------------------------|
-| Mac1    | Mac1 + Mac4 (combined)     | dnsmasq (DNS) · dig · curl · Wireshark · Backend B (port 3002) |
-| Mac2    | Mac2                       | nginx (reverse proxy) · TLS certificate · load balancer         |
-| Mac3    | Mac3                       | Backend A (port 3001)                                           |
+<a href="https://github.com/ravleensingh/computer_networks">
+  <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=600&size=22&pause=1000&color=58A6FF&center=true&vCenter=true&width=820&lines=DNS+%E2%86%92+TCP+%E2%86%92+TLS+%E2%86%92+HTTP+%E2%86%92+Load+Balancer+%E2%86%92+Backend;Resolve+app.teamX.test+through+our+own+DNS;HTTPS+terminated+at+nginx+on+port+8443;Round-robin+between+Backend+A+and+Backend+B;Observe+every+packet+with+Wireshark" alt="Typing animation" />
+</a>
 
-## Team Members
+![Phase 1](https://img.shields.io/badge/Phase%201-Build%20%26%20Observe-3fb950?style=for-the-badge)
+![Phase 2](https://img.shields.io/badge/Phase%202-Harden%20%26%20Recover-d29922?style=for-the-badge)
+![Setup](https://img.shields.io/badge/Setup-3%20Macs%20%C2%B7%20Type%202-58a6ff?style=for-the-badge)
+![HTTPS](https://img.shields.io/badge/HTTPS-nginx%20%3A8443-bc8cff?style=for-the-badge)
+![DNS](https://img.shields.io/badge/DNS-dnsmasq%20%3A53-f778ba?style=for-the-badge)
+![Backend](https://img.shields.io/badge/Backend-Python%20REST-3776AB?style=for-the-badge&logo=python&logoColor=white)
 
-_(Add your names and enrollment numbers here)_
+**A client types a private domain name → our own DNS resolves it → nginx terminates TLS → one of two backends answers.**
+*The application stays simple — the network is the project.*
 
+[Overview](#-overview) · [Team](#-team) · [Architecture](#-architecture) · [Request journey](#-the-journey-of-one-request) · [Quick start](#-quick-start) · [Verify](#-verify-everything-phase-1-tasks-ag) · [Failures](#-required-failure-demonstrations) · [Phase 2](#-phase-2--harden-recover-and-troubleshoot) · [Troubleshooting](#-troubleshooting--check-the-layers-in-order)
+
+</div>
+
+---
+
+## 🎯 Overview
+
+This repository holds our **Computer Networks course project — Private Network Service Platform**: a small, fully local service environment built on our own macOS laptops (no cloud). A client machine on our private LAN:
+
+- 🔎 resolves `app.teamX.test` through **our own DNS server** (dnsmasq),
+- 🔐 opens an **HTTPS** connection to our **reverse proxy** (nginx, TLS terminated at the edge),
+- ⚖️ is **load-balanced** (round-robin) to **Backend A or Backend B**,
+- 🦈 and every step can be **observed** with `dig`, `curl -v`, and Wireshark.
+
+> Replace **`teamX`** everywhere with your real team number (the project uses the reserved `.test` TLD — never `.local`, which clashes with macOS mDNS).
+
+| | Phase 1 — Build & Observe | Phase 2 — Harden & Recover |
+|---|---|---|
+| **Goal** | Client resolves `app.teamX.test`, connects over HTTPS, gets answers from both backends | Backup DNS, TTL behavior, service isolation, HA failover, edge migration, troubleshooting |
+| **Evidence** | `dig`, `curl -v`, Wireshark (DNS · TCP · TLS), cache headers, failure demos | Resilience tests, firewall rules, DNS cutover, systematic diagnosis |
+| **Docs** | [`Architecture_Document.md`](Architecture_Document.md) | [`Phase_2_Final_Report.md`](Phase_2_Final_Report.md) |
+
+---
+
+## 👥 Team
+
+**Type 2 — 3 Macs with combined roles** (the brief allows teams of 2–3 to combine machine roles).
+
+### Team members
+
+| Name | Enrollment No. |
+|------|----------------|
+| Aman Bhatnagar | 2401010060 |
+| Ravleen Singh | 2401020052 |
+| Ansh Tomar | 2401010079 |
+
+```text
+Aman Bhatnagar 2401010060
+Ravleen Singh 2401020052
+Ansh Tomar 2401010079
 ```
-XXXXXX Name1
-XXXXXX Name2
-XXXXXX Name3
+
+### Machine roles
+
+| Our Mac | Instructor role(s) absorbed | Services & ports |
+|---------|-----------------------------|------------------|
+| **Mac1** | Mac1 + Mac4 (DNS + test client + Backend B) | `dnsmasq` **:53** · `dig` · `curl` · Wireshark · **Backend B :3002** |
+| **Mac2** | Mac2 (edge / reverse proxy / load balancer) | `nginx` **:8443** (TLS) · certificate · round-robin upstream |
+| **Mac3** | Mac3 (Backend A) | **Backend A :3001** · backup `dnsmasq` (Phase 2) |
+
+---
+
+## 🗺️ Architecture
+
+```mermaid
+graph LR
+    C["🖥️ Client — Mac1<br/>curl / browser"] -- "① DNS query UDP/53" --> D["🔎 Mac1 · dnsmasq :53"]
+    D -- "A record → Mac2 IP" --> C
+    C -- "② TCP + ③ TLS · :8443" --> E["🔐 Mac2 · nginx<br/>TLS termination + LB"]
+    E -- "④ HTTP/1.1 · round-robin" --> A["🟢 Mac3 · Backend A :3001"]
+    E -- "④ HTTP/1.1 · round-robin" --> B["🩷 Mac1 · Backend B :3002"]
 ```
 
-## Architecture
+### Cloud equivalents
 
+| Machine | Role | Real-world equivalent |
+|---------|------|-----------------------|
+| Mac1 | Private DNS server + test client | Managed DNS (Amazon Route 53) |
+| Mac2 | Edge reverse proxy + load balancer + TLS | Cloud load balancer / CDN edge (AWS ALB, GCP LB) |
+| Mac3 | Backend server A | Application server instance A |
+| Mac1 | Backend server B | Application server instance B |
+
+### IP / service inventory
+
+Fill this in from `ipconfig getifaddr en0` (try `en1` if blank) on each Mac. **Never use example IPs blindly.**
+
+| Mac | Role | LAN IP | Interface | Ports |
+|-----|------|--------|-----------|-------|
+| Mac1 | DNS + Backend B + client | `<Mac1_IP>` | `en0` | 53/udp+tcp, 3002 |
+| Mac2 | nginx edge | `<Mac2_IP>` | `en0` | 8443 |
+| Mac3 | Backend A (+ backup DNS) | `<Mac3_IP>` | `en0` | 3001 (53 for backup DNS) |
+
+### OSI / TCP-IP layer map
+
+| Layer | Protocol in this project | Where you see it |
+|-------|--------------------------|------------------|
+| Application | **DNS**, **HTTP/1.1**, REST/JSON | `dig`, `curl -v`, `X-Backend` header |
+| Session / Presentation | **TLS 1.2 / 1.3** (terminated at nginx) | ClientHello, Certificate, encrypted records |
+| Transport | **TCP** (HTTPS, port 8443) · **UDP** (DNS, port 53) | SYN → SYN-ACK → ACK |
+| Network | **IP** on the private LAN | `ping`, Wireshark IP headers |
+| Link | Wi-Fi / Ethernet | MAC addresses on the LAN |
+
+---
+
+## 🚦 The journey of one request
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Client (Mac1)
+    participant D as dnsmasq (Mac1 :53)
+    participant N as nginx (Mac2 :8443)
+    participant B as Backend A or B
+
+    rect rgb(30, 60, 110)
+    C->>D: DNS query A app.teamX.test (UDP/53)
+    D-->>C: A record = Mac2 IP
+    end
+    rect rgb(20, 80, 40)
+    C->>N: TCP SYN
+    N-->>C: SYN-ACK
+    C->>N: ACK (connection established)
+    end
+    rect rgb(100, 75, 10)
+    C->>N: TLS ClientHello
+    N-->>C: ServerHello + Certificate
+    C->>N: ChangeCipherSpec / Finished
+    end
+    rect rgb(70, 40, 110)
+    C->>N: Encrypted GET /api/status
+    N->>B: HTTP/1.1 (round-robin)
+    B-->>N: JSON + X-Backend
+    N-->>C: Encrypted 200 OK
+    end
 ```
-Client (Mac1)
-  │
-  ├─ DNS query (UDP :53) ──► Mac1 dnsmasq
-  │   └─ Response: app.teamX.test → Mac2 IP
-  │
-  └─ HTTPS (TCP :8443) ──► Mac2 nginx (TLS termination)
-        ├──► Mac3:3001 (Backend A)  ──► round-robin
-        └──► Mac1:3002 (Backend B)  ──► load balancing
+
+1. **DNS** — client asks Mac1 (`UDP/53`) for `app.teamX.test`; dnsmasq answers with **Mac2's IP**. DNS only finds the address — it does not open the connection.
+2. **TCP** — SYN → SYN-ACK → ACK to Mac2 `:8443` creates a reliable, ordered, connection-oriented channel *before* any TLS/HTTP data.
+3. **TLS** — ClientHello → ServerHello + Certificate → key exchange → Finished. After ChangeCipherSpec the HTTP payload is **encrypted**, which is why Wireshark shows only *Application Data*.
+4. **HTTP** — nginx decrypts, then makes a *separate* plain-HTTP/1.1 request to Backend A or B (round-robin). The backend replies with JSON + `X-Backend`.
+5. The client never knows the backend IPs — it only knows `app.teamX.test:8443`.
+
+---
+
+## 📁 Repository structure
+
+```text
+computer_networks/
+├── README.md                      # ← you are here
+├── Architecture_Document.md       # topology, IP/service table, request-flow, layer mapping
+├── Phase_2_Final_Report.md        # Phase 2 changes, resilience tests, learning summaries
+├── backend-a/server.py            # Backend A — Mac3, port 3001
+├── backend-b/server.py            # Backend B — Mac1, port 3002 (identical code)
+├── dns/
+│   ├── dnsmasq.conf               # primary DNS (Mac1)
+│   └── dnsmasq-backup.conf        # backup DNS (Mac3, Phase 2 Ext. A)
+├── nginx/
+│   ├── nginx.conf                 # edge proxy + round-robin LB + TLS (Mac2)
+│   ├── nginx-standby.conf         # standby edge with failover params (Phase 2 Ext. D/E)
+│   └── setup_mac2.sh              # automated Mac2 deployment
+├── tls/
+│   ├── openssl.cnf                # cert request config (CN + SAN)
+│   └── generate_cert.sh           # self-signed cert generator (*.key / *.crt not tracked)
+├── evidence/                      # screenshots + captures (not pushed)
+└── .gitignore
 ```
 
-## How to Run
+---
 
-### Backend A (Mac3)
+## 🚀 Quick start
+
+### Prerequisites
+
 ```bash
+# Mac1
+brew install dnsmasq wireshark python
+# Mac2
+brew install python nginx openssl wireshark
+# Mac3
+brew install python
+```
+
+All three Macs must be on the **same private Wi-Fi/LAN**. Verify with `ping -c 4 <IP>` between every pair, and allow incoming connections if the macOS firewall prompts for `dnsmasq` / `nginx` / `python`.
+
+### ⏱️ Startup order (use before every demo)
+
+| # | Mac | Action |
+|---|-----|--------|
+| 1 | **Mac3** | Start Backend A |
+| 2 | **Mac1** | Start Backend B, then dnsmasq |
+| 3 | **Mac2** | Start (or restart) nginx |
+| 4 | **Mac1** | Final checks from the client |
+
+### 1️⃣ Backends (identical code, different arguments)
+
+Both backends use the **same `server.py`**; only the startup arguments change. They bind to `0.0.0.0` so other Macs can reach them.
+
+```bash
+# Mac3 — Backend A
 cd backend-a/
 python3 server.py A 3001
 ```
 
-### Backend B (Mac1)
 ```bash
+# Mac1 — Backend B
 cd backend-b/
 python3 server.py B 3002
 ```
 
-Both backends use the **identical** `server.py` code. The only difference is the startup arguments (`A 3001` vs `B 3002`).
-
-### Edge / Reverse Proxy (Mac2)
-
-#### Quick Setup
 ```bash
-# From the repo root, run:
+# Local sanity check on each Mac (X-Backend must show A or B, HTTP 200)
+curl -i http://127.0.0.1:3001/api/status   # Mac3
+curl -i http://127.0.0.1:3002/api/status   # Mac1
+```
+
+### 2️⃣ Private DNS (Mac1)
+
+Copy `dns/dnsmasq.conf` to `~/CN-Project/dns/`, replace `<Mac1_LAN_IP>` and `<Mac2_IP>`, then:
+
+```bash
+dnsmasq --test -C ~/CN-Project/dns/dnsmasq.conf
+sudo dnsmasq --keep-in-foreground --conf-file=$HOME/CN-Project/dns/dnsmasq.conf
+```
+
+Key lines:
+
+```text
+port=53
+listen-address=<Mac1_LAN_IP>      # LAN IP, NOT 127.0.0.1 — otherwise other Macs cannot use it
+bind-interfaces
+no-resolv
+server=1.1.1.1
+address=/app.teamX.test/<Mac2_IP>
+address=/api.teamX.test/<Mac2_IP>
+address=/teamX.test/<Mac2_IP>
+```
+
+Point the client Macs (at least two) at Mac1 for DNS:
+
+```bash
+sudo networksetup -setdnsservers "Wi-Fi" <Mac1_IP>
+networksetup -getdnsservers "Wi-Fi"
+dscacheutil -flushcache && sudo killall -HUP mDNSResponder
+dig app.teamX.test        # ANSWER must be Mac2's IP; SERVER must be Mac1's IP
+```
+
+### 3️⃣ Edge reverse proxy + TLS (Mac2)
+
+**Quick setup**
+
+```bash
 cd nginx/
 ./setup_mac2.sh <Mac1_IP> <Mac3_IP>
 ```
 
-#### Manual Setup
-1. Generate the TLS certificate:
-   ```bash
+**Manual setup**
+
+1. Generate the self-signed certificate (CN + SAN = `app.teamX.test`, `api.teamX.test`):
+```bash
    cd tls/
    ./generate_cert.sh
-   ```
-
-2. Deploy nginx config (replace `<Mac1_IP>` and `<Mac3_IP>` with actual IPs):
-   ```bash
-   # Back up original nginx config
-   cp "$(brew --prefix)/etc/nginx/nginx.conf" ~/CN-Project/nginx/nginx.conf.backup
-
-   # Copy TLS files to local project directory
+```
+2. Deploy the nginx config (replace `<Mac1_IP>`, `<Mac3_IP>`, `<YOUR_USERNAME>` first):
+```bash
+   cp "$(brew --prefix)/etc/nginx/nginx.conf" ~/CN-Project/nginx/nginx.conf.backup   # rollback copy
    mkdir -p ~/CN-Project/tls
-   cp tls/app.teamX.test.crt ~/CN-Project/tls/
-   cp tls/app.teamX.test.key ~/CN-Project/tls/
+   cp tls/app.teamX.test.crt tls/app.teamX.test.key ~/CN-Project/tls/
    chmod 600 ~/CN-Project/tls/app.teamX.test.key
-
-   # Edit nginx/nginx.conf — replace <Mac1_IP>, <Mac3_IP>, <YOUR_USERNAME>
-   # Then copy to nginx's config directory
    sudo cp nginx/nginx.conf "$(brew --prefix)/etc/nginx/nginx.conf"
-
-   # Verify and start
-   nginx -t
-   brew services start nginx
-   ```
-
+   nginx -t                        # must say: syntax is ok / test is successful
+   brew services start nginx       # or: brew services restart nginx
+   lsof -nP -iTCP:8443 -sTCP:LISTEN
+```
 3. Trust the certificate on Mac2:
-   ```bash
+```bash
    sudo security add-trusted-cert -d -r trustRoot \
-     -k /Library/Keychains/System.keychain \
-     ~/CN-Project/tls/app.teamX.test.crt
-   ```
+     -k /Library/Keychains/System.keychain ~/CN-Project/tls/app.teamX.test.crt
+```
+4. Send **only the `.crt`** to Mac1 and Mac3 (AirDrop or `scp`), then in **Keychain Access** → login keychain → open the cert → *Trust* → **Always Trust**.
 
-4. Distribute the `.crt` file to Mac1 and Mac3 (via scp or AirDrop).
+The heart of `nginx/nginx.conf`:
 
-### Endpoints
+```nginx
+upstream backend_pool {
+    server <Mac3_IP>:3001;   # Backend A (Mac3)
+    server <Mac1_IP>:3002;   # Backend B (Mac1)
+}
 
-| Endpoint        | Response                                              |
-|-----------------|-------------------------------------------------------|
-| `GET /`         | JSON confirming service is running                    |
+server {
+    listen 8443 ssl;
+    server_name app.teamX.test;
+
+    ssl_certificate     /Users/<YOUR_USERNAME>/CN-Project/tls/app.teamX.test.crt;
+    ssl_certificate_key /Users/<YOUR_USERNAME>/CN-Project/tls/app.teamX.test.key;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+
+    location / {
+        proxy_pass         http://backend_pool;
+        proxy_http_version 1.1;
+        proxy_set_header   Host $host;
+        proxy_set_header   X-Real-IP $remote_addr;
+        proxy_set_header   X-Forwarded-Proto https;
+    }
+}
+```
+
+> 🔐 **Security:** the private key (`app.teamX.test.key`) **never leaves Mac2** and is never committed. Port `8443` is used instead of `443` (allowed by the brief).
+
+### 🌐 Endpoints
+
+| Endpoint | Response |
+|----------|----------|
+| `GET /` | JSON confirming the service is running |
 | `GET /api/status` | `{"backend": "A/B", "status": "ok"}` + `X-Backend` header |
-| `GET /api/cache`  | Cache-Control + ETag headers; supports 304 Not Modified |
+| `GET /api/cache` | `Cache-Control: max-age=60` + `ETag: "cache-v1"`; returns **304** on matching `If-None-Match` |
 
-### Testing
+---
+
+## ✅ Verify everything (Phase 1, tasks A–G)
+
+> ⚠️ **Never use `curl -k`** — certificate validation must not be bypassed. Always use the **domain name**, never an IP, in the URL.
+
+| Task | What to prove | Command (run from a client Mac) | Pass condition |
+|------|---------------|---------------------------------|----------------|
+| **A** · LAN | All Macs reach each other | `ping -c 4 <IP>` for every pair | 0% loss |
+| **B** · DNS | Name resolves via *our* DNS | `dig app.teamX.test` | ANSWER = Mac2 IP · `SERVER` = Mac1 IP |
+| **B** · private | Name is not public | `dig @8.8.8.8 app.teamX.test` | `NXDOMAIN` |
+| **C** · Backends | Both respond | `curl -i http://127.0.0.1:3001/api/status` and `:3002` | 200 + `X-Backend` |
+| **D** · LB | Round-robin A ↔ B | see loop below | both `A` and `B` appear |
+| **E** · HTTPS | Valid TLS, no `-k` | `curl -v https://app.teamX.test:8443/` | TLS handshake, cert matches domain, 200 |
+| **F** · Caching | `Cache-Control` + 304 | see below | `max-age=60`, `ETag`, then `304` |
+| **G** · Packets | DNS + TCP + TLS in Wireshark | filters below | all three layers visible |
+
+**Load balancing (D)**
 
 ```bash
-# Verify HTTPS (no -k flag!)
-curl -v https://app.teamX.test:8443/api/status
+for i in {1..10}; do
+  echo -n "Request $i: "
+  curl -s -D - https://app.teamX.test:8443/api/status -o /dev/null | grep -i "^X-Backend"
+done
 
-# Load balancing test (should alternate A/B)
 for i in {1..6}; do curl -s https://app.teamX.test:8443/api/status; echo; done
-
-# Caching test
-curl -i https://app.teamX.test:8443/api/cache
-
-# 304 Not Modified test
-curl -i -H 'If-None-Match: "cache-v1"' https://app.teamX.test:8443/api/cache
 ```
 
-## Project Structure
+**HTTPS + HTTP/1.1 (E)**
 
-```
-├── README.md
-├── backend-b/
-│   └── server.py              # Backend B — runs on Mac1 port 3002
-├── dns/
-│   └── dnsmasq.conf           # DNS server config (template — Mac1)
-├── tls/
-│   ├── openssl.cnf            # OpenSSL config for cert generation
-│   ├── generate_cert.sh       # Script to generate self-signed TLS cert
-│   ├── app.teamX.test.crt     # Self-signed certificate (generated, not tracked)
-│   └── app.teamX.test.key     # Private key (NEVER leaves Mac2, not tracked)
-├── nginx/
-│   ├── nginx.conf             # nginx reverse proxy config (template)
-│   └── setup_mac2.sh          # Automated Mac2 deployment script
-├── evidence/                   # Screenshots and captures (not pushed)
-└── .gitignore
+```bash
+curl -v https://app.teamX.test:8443/
+curl --http1.1 -i https://app.teamX.test:8443/api/status
+openssl x509 -in ~/CN-Project/tls/app.teamX.test.crt -noout -subject -issuer -dates -ext subjectAltName
 ```
 
-> **Note:** Backend A (`backend-a/`) will be added by Mac3. The `backend-b/server.py` code is identical — Mac3 copies it to `backend-a/`.
+**Caching (F)**
+
+```bash
+curl -i  https://app.teamX.test:8443/api/cache                               # Cache-Control + ETag
+curl -sI https://app.teamX.test:8443/api/cache                               # headers only
+curl -i -H 'If-None-Match: "cache-v1"' https://app.teamX.test:8443/api/cache # → 304 Not Modified
+```
+
+| Case | Meaning |
+|------|---------|
+| Fresh cache hit | Stored copy is within `max-age` — reused with **no** request to the server |
+| Conditional request | After expiry the client asks "is my copy still valid?" via `If-None-Match` |
+| `304 Not Modified` | Copy still valid — headers only, **no body** re-sent |
+| Full new request | Client has no valid copy and receives the full body |
+
+**Wireshark (G)** — capture on the client's Wi-Fi interface (e.g. `en0`) while running `dig app.teamX.test` and `curl -v https://app.teamX.test:8443/api/status`:
+
+| Layer | Display filter | Look for |
+|-------|----------------|----------|
+| DNS | `dns` | Query `A app.teamX.test` client → Mac1 `:53/UDP`; response with Mac2's IP and TTL |
+| TCP | `tcp.flags.syn==1` | SYN (ephemeral port → `:8443`) → SYN-ACK → ACK; Seq/Ack numbers |
+| TLS | `tls` | ClientHello (version, ciphers) → ServerHello + Certificate → ChangeCipherSpec → *Application Data* only |
+| All | `udp.port == 53 or tcp.port == 8443` | Ports: `53/UDP` for DNS, `8443/TCP` for HTTPS, plus the client's ephemeral source port |
+
+Save the capture under `evidence/` (large binaries such as `*.pcapng` are git-ignored — share manually).
+
+---
+
+## 💥 Required failure demonstrations
+
+Break **one thing at a time**, observe, explain which **layer** failed, then **restore**.
+
+| Scenario | Action | Expected observation | Layer |
+|----------|--------|----------------------|-------|
+| **Wrong DNS server** | `sudo networksetup -setdnsservers "Wi-Fi" 8.8.8.8` + flush cache, then `dig app.teamX.test` | Lookup fails (`NXDOMAIN`) but `ping <Mac2_IP>` still works | DNS (IP unaffected) |
+| **Wrong port** | `curl -v https://app.teamX.test:8999/` | DNS resolves, host reachable, TCP *connection refused* | Transport (TCP) |
+| **Stop Backend A** | `Ctrl+C` Backend A, then repeat the LB loop | Baseline Phase 1 config may error on the dead upstream; with HA params (Ext. D) all traffic flows to `X-Backend: B` | Application / edge |
+| **Wrong DNS record** | Temporarily set `address=/app.teamX.test/192.0.2.10`, restart dnsmasq | Resolution *succeeds* but sends the client to the wrong IP | DNS (a directory, not a connection) |
+| **Both backends down** | Stop A and B | TLS + DNS still work; nginx returns **502 Bad Gateway** | Edge ends / backend begins |
+
+**Restore after the wrong-DNS test:**
+
+```bash
+sudo networksetup -setdnsservers "Wi-Fi" <Mac1_IP>
+dscacheutil -flushcache && sudo killall -HUP mDNSResponder
+```
+
+---
+
+## 🛡️ Phase 2 — Harden, Recover and Troubleshoot
+
+Phase 2 extends the **same** infrastructure (no rebuild). Full write-up: [`Phase_2_Final_Report.md`](Phase_2_Final_Report.md).
+
+| Ext. | Goal | How (summary) | Repo artifact |
+|------|------|---------------|---------------|
+| **A** · Backup DNS | Names still resolve when the primary DNS dies | Second dnsmasq on **Mac3**; clients list both resolvers; stop Mac1's dnsmasq and re-run `dig` | [`dns/dnsmasq-backup.conf`](dns/dnsmasq-backup.conf) |
+| **B** · DNS TTL | Show caching vs cutover | Short TTL (e.g. `local-ttl=30`), resolve, change the record, watch the old answer persist until expiry; flush cache for an instant change | [`dns/dnsmasq.conf`](dns/dnsmasq.conf) |
+| **C** · Isolation | Only the edge may reach the backends | `pf` rules on the backend Macs allow Mac2 → `:3001`/`:3002`, block everyone else; **keep a rollback copy** and restore afterwards | rules are local |
+| **D** · HA failover | Edge routes around a dead backend | `max_fails` / `fail_timeout` / `proxy_next_upstream`; stop Backend A → only `X-Backend: B`; restart → LB resumes | [`nginx/nginx-standby.conf`](nginx/nginx-standby.conf) |
+| **E** · Edge migration | DNS-based cutover to a standby edge | Standby nginx on **Mac3** with the same config; change the A record to Mac3's IP; observe TTL effects | [`nginx/nginx-standby.conf`](nginx/nginx-standby.conf) |
+| **F** · Troubleshooting | Diagnose a faculty-injected fault | DNS → TCP → TLS → application, explained out loud | see [Troubleshooting](#-troubleshooting--check-the-layers-in-order) |
+
+```bash
+# Ext. A — clients list primary + backup resolver
+sudo networksetup -setdnsservers "Wi-Fi" <Mac1_IP> <Mac3_IP>
+sudo killall dnsmasq        # on Mac1 → dig app.teamX.test still answers via Mac3
+```
+
+```nginx
+# Ext. D — failover-aware upstream
+upstream backend_pool {
+    server <Mac3_IP>:3001 max_fails=1 fail_timeout=5s;
+    server <Mac1_IP>:3002 max_fails=1 fail_timeout=5s;
+}
+# …and inside location /  →  proxy_next_upstream error timeout;
+```
+
+```bash
+# Ext. C — illustrative pf template (on a backend Mac; adapt port + <Mac2_IP>)
+sudo cp /etc/pf.conf ~/pf.conf.rollback
+cat > /tmp/cn-isolation.rules << 'RULES'
+pass  in quick proto tcp from <Mac2_IP> to any port 3001
+block in quick proto tcp from any to any port 3001
+RULES
+sudo pfctl -f /tmp/cn-isolation.rules -e
+# Rollback: sudo pfctl -f ~/pf.conf.rollback && sudo pfctl -d
+```
+
+**Single point of failure:** the edge nginx on Mac2. Ext. E mitigates it with a standby edge + DNS cutover; eliminating it fully would need a floating/virtual IP (e.g. keepalived/VRRP) or multiple edges behind DNS round-robin.
+
+---
+
+## 🩺 Troubleshooting — check the layers in order
+
+| Layer | First check | If it fails |
+|-------|-------------|-------------|
+| **DNS** | `dig app.teamX.test` | dnsmasq running on Mac1? port 53? config valid? client DNS setting? |
+| **TCP / port** | `nc -vz <Mac2_IP> 8443` | nginx running and listening on Mac2? firewall? |
+| **TLS** | `curl -v https://app.teamX.test:8443/` | cert path/trust/SAN, hostname, nginx `ssl_*` settings |
+| **HTTP / app** | `curl -i https://app.teamX.test:8443/api/status` | Backend A, Backend B, nginx upstream block |
+
+```bash
+# DNS
+lsof -nP -iUDP:53 -iTCP:53
+dnsmasq --test -C ~/CN-Project/dns/dnsmasq.conf
+dig @<Mac1_IP> app.teamX.test
+networksetup -getdnsservers "Wi-Fi"
+
+# nginx
+nginx -t
+lsof -nP -iTCP:8443 -sTCP:LISTEN
+tail -f /opt/homebrew/var/log/nginx/error.log
+
+# Backends
+lsof -nP -iTCP:3001 -sTCP:LISTEN
+lsof -nP -iTCP:3002 -sTCP:LISTEN
+
+# Certificate
+openssl x509 -in ~/CN-Project/tls/app.teamX.test.crt -noout -subject -ext subjectAltName
+```
+
+---
+
+## 🗂️ Deliverables map
+
+| Deliverable | Where |
+|-------------|-------|
+| Architecture document (topology, IP/service table, request flow) | [`Architecture_Document.md`](Architecture_Document.md) |
+| Configuration bundle (dnsmasq, nginx, TLS notes) | [`dns/`](dns), [`nginx/`](nginx), [`tls/`](tls) |
+| Backend source code | [`backend-a/`](backend-a), [`backend-b/`](backend-b) |
+| Evidence folder (screenshots, captures) | `evidence/` — kept locally / shared manually |
+| Phase 2 final report | [`Phase_2_Final_Report.md`](Phase_2_Final_Report.md) |
+
+<details>
+<summary><b>📸 Evidence checklist (click to expand)</b></summary>
+
+- [ ] IP table for all Macs · ping between every pair
+- [ ] Backend A and Backend B running (`X-Backend` visible)
+- [ ] `dig @<Mac1_IP>` and plain `dig app.teamX.test` · `dig @8.8.8.8` → `NXDOMAIN`
+- [ ] Certificate details (CN + SAN) · `curl -v https://app.teamX.test:8443/` with **no `-k`**
+- [ ] Load balancing — `A` and `B` alternating
+- [ ] `Cache-Control` / `ETag` and the `304` response
+- [ ] Wireshark: DNS · TCP handshake · TLS handshake (+ saved `.pcapng`)
+- [ ] Failure demos recorded **and restored**
+
+</details>
+
+---
+
+## 🔒 Repository hygiene
+
+- 🚫 **Never commit** private keys or generated certs (`tls/*.key`, `tls/*.crt` are git-ignored).
+- 🚫 Wireshark captures (`*.pcapng`) and screenshots (`evidence/*.png`) are git-ignored — share them manually.
+- 🚫 Per-Mac terminal command logs (`mac1userterminalcommand`, `mac2userterminalcommand`, `mac3userterminalcommand`) are **local collaboration files only** and stay out of Git.
+- ✅ Only the **public** `.crt` is ever distributed to client Macs.
+
+<div align="center">
+
+<sub>Built on three MacBooks, one private LAN, and a lot of <code>dig</code>. 🛰️</sub>
+
+<img src="https://capsule-render.vercel.app/api?type=waving&color=gradient&customColorList=12,20,24&height=100&section=footer" width="100%" alt="footer"/>
+
+</div>
