@@ -7,7 +7,6 @@
 </a>
 
 ![Phase 1](https://img.shields.io/badge/Phase%201-Build%20%26%20Observe-3fb950?style=for-the-badge)
-![Phase 2](https://img.shields.io/badge/Phase%202-Harden%20%26%20Recover-d29922?style=for-the-badge)
 ![Setup](https://img.shields.io/badge/Setup-3%20Macs%20%C2%B7%20Type%202-58a6ff?style=for-the-badge)
 ![HTTPS](https://img.shields.io/badge/HTTPS-nginx%20%3A8443-bc8cff?style=for-the-badge)
 ![DNS](https://img.shields.io/badge/DNS-dnsmasq%20%3A53-f778ba?style=for-the-badge)
@@ -16,7 +15,7 @@
 **A client types a private domain name → our own DNS resolves it → nginx terminates TLS → one of two backends answers.**
 *The application stays simple — the network is the project.*
 
-[Overview](#-overview) · [Team](#-team) · [Architecture](#-architecture) · [Request journey](#-the-journey-of-one-request) · [Quick start](#-quick-start) · [Verify](#-verify-everything-phase-1-tasks-ag) · [Failures](#-required-failure-demonstrations) · [Phase 2](#-phase-2--harden-recover-and-troubleshoot) · [Troubleshooting](#-troubleshooting--check-the-layers-in-order)
+[Overview](#-overview) · [Team](#-team) · [Architecture](#-architecture) · [Request journey](#-the-journey-of-one-request) · [Quick start](#-quick-start) · [Verify](#-verify-everything-phase-1-tasks-ag) · [Failures](#-required-failure-demonstrations) · [Troubleshooting](#-troubleshooting--check-the-layers-in-order)
 
 </div>
 
@@ -24,7 +23,7 @@
 
 ## 🎯 Overview
 
-This repository holds our **Computer Networks course project — Private Network Service Platform**: a small, fully local service environment built on our own macOS laptops (no cloud). A client machine on our private LAN:
+This repository holds our **Computer Networks course project — Private Network Service Platform (Phase 1: Build & Observe)**: a small, fully local service environment built on our own macOS laptops (no cloud). A client machine on our private LAN:
 
 - 🔎 resolves `app.teamX.test` through **our own DNS server** (dnsmasq),
 - 🔐 opens an **HTTPS** connection to our **reverse proxy** (nginx, TLS terminated at the edge),
@@ -33,11 +32,13 @@ This repository holds our **Computer Networks course project — Private Network
 
 > Replace **`teamX`** everywhere with your real team number (the project uses the reserved `.test` TLD — never `.local`, which clashes with macOS mDNS).
 
-| | Phase 1 — Build & Observe | Phase 2 — Harden & Recover |
-|---|---|---|
-| **Goal** | Client resolves `app.teamX.test`, connects over HTTPS, gets answers from both backends | Backup DNS, TTL behavior, service isolation, HA failover, edge migration, troubleshooting |
-| **Evidence** | `dig`, `curl -v`, Wireshark (DNS · TCP · TLS), cache headers, failure demos | Resilience tests, firewall rules, DNS cutover, systematic diagnosis |
-| **Docs** | [`Architecture_Document.md`](Architecture_Document.md) | [`Phase_2_Final_Report.md`](Phase_2_Final_Report.md) |
+**Phase 1 is complete when** a client resolves `app.teamX.test`, connects over HTTPS, and receives responses from both backends through the load balancer.
+
+| | Phase 1 — Build & Observe |
+|---|---|
+| **Goal** | Build the core network infrastructure and prove it works using tools |
+| **Evidence** | `dig`, `curl -v`, Wireshark (DNS · TCP · TLS), cache headers, failure demos |
+| **Docs** | [`Architecture_Document.md`](Architecture_Document.md) |
 
 ---
 
@@ -65,7 +66,7 @@ Ansh Tomar 2401010079
 |---------|-----------------------------|------------------|
 | **Mac1** | Mac1 + Mac4 (DNS + test client + Backend B) | `dnsmasq` **:53** · `dig` · `curl` · Wireshark · **Backend B :3002** |
 | **Mac2** | Mac2 (edge / reverse proxy / load balancer) | `nginx` **:8443** (TLS) · certificate · round-robin upstream |
-| **Mac3** | Mac3 (Backend A) | **Backend A :3001** · backup `dnsmasq` (Phase 2) |
+| **Mac3** | Mac3 (Backend A) | **Backend A :3001** |
 
 ---
 
@@ -97,7 +98,7 @@ Fill this in from `ipconfig getifaddr en0` (try `en1` if blank) on each Mac. **N
 |-----|------|--------|-----------|-------|
 | Mac1 | DNS + Backend B + client | `<Mac1_IP>` | `en0` | 53/udp+tcp, 3002 |
 | Mac2 | nginx edge | `<Mac2_IP>` | `en0` | 8443 |
-| Mac3 | Backend A (+ backup DNS) | `<Mac3_IP>` | `en0` | 3001 (53 for backup DNS) |
+| Mac3 | Backend A | `<Mac3_IP>` | `en0` | 3001 |
 
 ### OSI / TCP-IP layer map
 
@@ -157,15 +158,12 @@ sequenceDiagram
 computer_networks/
 ├── README.md                      # ← you are here
 ├── Architecture_Document.md       # topology, IP/service table, request-flow, layer mapping
-├── Phase_2_Final_Report.md        # Phase 2 changes, resilience tests, learning summaries
 ├── backend-a/server.py            # Backend A — Mac3, port 3001
 ├── backend-b/server.py            # Backend B — Mac1, port 3002 (identical code)
 ├── dns/
-│   ├── dnsmasq.conf               # primary DNS (Mac1)
-│   └── dnsmasq-backup.conf        # backup DNS (Mac3, Phase 2 Ext. A)
+│   └── dnsmasq.conf               # private DNS (Mac1)
 ├── nginx/
 │   ├── nginx.conf                 # edge proxy + round-robin LB + TLS (Mac2)
-│   ├── nginx-standby.conf         # standby edge with failover params (Phase 2 Ext. D/E)
 │   └── setup_mac2.sh              # automated Mac2 deployment
 ├── tls/
 │   ├── openssl.cnf                # cert request config (CN + SAN)
@@ -393,61 +391,20 @@ Break **one thing at a time**, observe, explain which **layer** failed, then **r
 
 | Scenario | Action | Expected observation | Layer |
 |----------|--------|----------------------|-------|
+| **Stop one backend** | `Ctrl+C` Backend A, then repeat the LB loop | Responses show `X-Backend: B` only | Application / edge |
 | **Wrong DNS server** | `sudo networksetup -setdnsservers "Wi-Fi" 8.8.8.8` + flush cache, then `dig app.teamX.test` | Lookup fails (`NXDOMAIN`) but `ping <Mac2_IP>` still works | DNS (IP unaffected) |
 | **Wrong port** | `curl -v https://app.teamX.test:8999/` | DNS resolves, host reachable, TCP *connection refused* | Transport (TCP) |
-| **Stop Backend A** | `Ctrl+C` Backend A, then repeat the LB loop | Baseline Phase 1 config may error on the dead upstream; with HA params (Ext. D) all traffic flows to `X-Backend: B` | Application / edge |
-| **Wrong DNS record** | Temporarily set `address=/app.teamX.test/192.0.2.10`, restart dnsmasq | Resolution *succeeds* but sends the client to the wrong IP | DNS (a directory, not a connection) |
-| **Both backends down** | Stop A and B | TLS + DNS still work; nginx returns **502 Bad Gateway** | Edge ends / backend begins |
 
-**Restore after the wrong-DNS test:**
+**Restore after each test:**
 
 ```bash
+# Backend A (Mac3)
+cd backend-a/ && python3 server.py A 3001
+
+# Client DNS
 sudo networksetup -setdnsservers "Wi-Fi" <Mac1_IP>
 dscacheutil -flushcache && sudo killall -HUP mDNSResponder
 ```
-
----
-
-## 🛡️ Phase 2 — Harden, Recover and Troubleshoot
-
-Phase 2 extends the **same** infrastructure (no rebuild). Full write-up: [`Phase_2_Final_Report.md`](Phase_2_Final_Report.md).
-
-| Ext. | Goal | How (summary) | Repo artifact |
-|------|------|---------------|---------------|
-| **A** · Backup DNS | Names still resolve when the primary DNS dies | Second dnsmasq on **Mac3**; clients list both resolvers; stop Mac1's dnsmasq and re-run `dig` | [`dns/dnsmasq-backup.conf`](dns/dnsmasq-backup.conf) |
-| **B** · DNS TTL | Show caching vs cutover | Short TTL (e.g. `local-ttl=30`), resolve, change the record, watch the old answer persist until expiry; flush cache for an instant change | [`dns/dnsmasq.conf`](dns/dnsmasq.conf) |
-| **C** · Isolation | Only the edge may reach the backends | `pf` rules on the backend Macs allow Mac2 → `:3001`/`:3002`, block everyone else; **keep a rollback copy** and restore afterwards | rules are local |
-| **D** · HA failover | Edge routes around a dead backend | `max_fails` / `fail_timeout` / `proxy_next_upstream`; stop Backend A → only `X-Backend: B`; restart → LB resumes | [`nginx/nginx-standby.conf`](nginx/nginx-standby.conf) |
-| **E** · Edge migration | DNS-based cutover to a standby edge | Standby nginx on **Mac3** with the same config; change the A record to Mac3's IP; observe TTL effects | [`nginx/nginx-standby.conf`](nginx/nginx-standby.conf) |
-| **F** · Troubleshooting | Diagnose a faculty-injected fault | DNS → TCP → TLS → application, explained out loud | see [Troubleshooting](#-troubleshooting--check-the-layers-in-order) |
-
-```bash
-# Ext. A — clients list primary + backup resolver
-sudo networksetup -setdnsservers "Wi-Fi" <Mac1_IP> <Mac3_IP>
-sudo killall dnsmasq        # on Mac1 → dig app.teamX.test still answers via Mac3
-```
-
-```nginx
-# Ext. D — failover-aware upstream
-upstream backend_pool {
-    server <Mac3_IP>:3001 max_fails=1 fail_timeout=5s;
-    server <Mac1_IP>:3002 max_fails=1 fail_timeout=5s;
-}
-# …and inside location /  →  proxy_next_upstream error timeout;
-```
-
-```bash
-# Ext. C — illustrative pf template (on a backend Mac; adapt port + <Mac2_IP>)
-sudo cp /etc/pf.conf ~/pf.conf.rollback
-cat > /tmp/cn-isolation.rules << 'RULES'
-pass  in quick proto tcp from <Mac2_IP> to any port 3001
-block in quick proto tcp from any to any port 3001
-RULES
-sudo pfctl -f /tmp/cn-isolation.rules -e
-# Rollback: sudo pfctl -f ~/pf.conf.rollback && sudo pfctl -d
-```
-
-**Single point of failure:** the edge nginx on Mac2. Ext. E mitigates it with a standby edge + DNS cutover; eliminating it fully would need a floating/virtual IP (e.g. keepalived/VRRP) or multiple edges behind DNS round-robin.
 
 ---
 
@@ -490,7 +447,6 @@ openssl x509 -in ~/CN-Project/tls/app.teamX.test.crt -noout -subject -ext subjec
 | Configuration bundle (dnsmasq, nginx, TLS notes) | [`dns/`](dns), [`nginx/`](nginx), [`tls/`](tls) |
 | Backend source code | [`backend-a/`](backend-a), [`backend-b/`](backend-b) |
 | Evidence folder (screenshots, captures) | `evidence/` — kept locally / shared manually |
-| Phase 2 final report | [`Phase_2_Final_Report.md`](Phase_2_Final_Report.md) |
 
 <details>
 <summary><b>📸 Evidence checklist (click to expand)</b></summary>
@@ -502,7 +458,7 @@ openssl x509 -in ~/CN-Project/tls/app.teamX.test.crt -noout -subject -ext subjec
 - [ ] Load balancing — `A` and `B` alternating
 - [ ] `Cache-Control` / `ETag` and the `304` response
 - [ ] Wireshark: DNS · TCP handshake · TLS handshake (+ saved `.pcapng`)
-- [ ] Failure demos recorded **and restored**
+- [ ] Failure demo recorded **and restored**
 
 </details>
 
