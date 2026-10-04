@@ -18,8 +18,8 @@ graph LR
 | Machine | Assigned LAN IP | Role | Services & Ports |
 |---|---|---|---|
 | Mac 1 (Ravleen) | 10.7.20.106 | DNS + Backend B + Client | dnsmasq (53), Backend B (3002) |
-| Mac 2 (Lakshay) | 10.7.19.222 | Edge Load Balancer | nginx (8443, TLS) |
-| Mac 3 (Shitanshu) | 10.7.7.23 | Backend A | Backend A (3001) |
+| Mac 2 (Aman) | 10.7.19.222 | Edge Load Balancer | nginx (8443, TLS) |
+| Mac 3 (Ansh) | 10.7.7.23 | Backend A | Backend A (3001) |
 
 ## 3. Request-Flow Diagram showing each protocol layer
 1. **DNS Resolution**: Client (Mac1) queries DNS (`app.teamX.test`) -> Mac1 dnsmasq:53 -> responds with Mac2's IP.
