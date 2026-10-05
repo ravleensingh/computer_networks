@@ -50,12 +50,12 @@ This repository holds our **Computer Networks course project — Private Network
 
 | Name | Enrollment No. |
 |------|----------------|
-| Aman Bhatnagar | 2401010060 |
+| Aman | 2401010060 |
 | Ravleen Singh | 2401020052 |
 | Ansh Tomar | 2401010079 |
 
 ```text
-Aman Bhatnagar 2401010060
+Aman 2401010060
 Ravleen Singh 2401020052
 Ansh Tomar 2401010079
 ```
